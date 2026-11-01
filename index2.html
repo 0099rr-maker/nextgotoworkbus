@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>北拱街往 CWB 巴士動態 Dashboard</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            background-color: #0A0A0A; 
+            color: #FFFFFF; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            padding: 24px 16px; 
+            max-width: 800px; 
+            margin: 0 auto; 
+        }
+        
+        header { text-align: center; margin-bottom: 24px; }
+        h1 { color: #00E676; font-size: 2.2rem; font-weight: 800; letter-spacing: 1px; }
+        .subtitle { color: #888888; font-size: 1rem; margin-top: 4px; }
+
+        .bus-card { 
+            background: #181818; 
+            border-radius: 18px; 
+            padding: 18px 24px; 
+            margin-bottom: 16px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border: 1px solid #282828;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+
+        /* 首班車特別加強邊框 */
+        .bus-card.urgent { border-left: 8px solid #FF3B30; }
+        .bus-card.normal { border-left: 8px solid #00E676; }
+        .bus-card.relaxed { border-left: 8px solid #8E8E93; }
+
+        .route-info { display: flex; align-items: center; gap: 16px; }
+        
+        /* 巴士營運商標籤 */
+        .company-badge { 
+            font-size: 1.1rem; 
+            font-weight: 900; 
+            padding: 6px 12px; 
+            border-radius: 8px; 
+            letter-spacing: 1px;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+        .kmb-tag { background-color: #E60012; color: #FFFFFF; }
+        .ctb-tag { background-color: #FFD600; color: #000000; }
+
+        .route-num { font-size: 3.8rem; font-weight: 900; line-height: 1; letter-spacing: -1px; }
+
+        .eta-info { text-align: right; }
+        .eta-time { font-size: 2.8rem; font-weight: 900; line-height: 1; }
+        .eta-unit { font-size: 1.3rem; margin-left: 4px; font-weight: 600; }
+        
+        /* 動態計時顏色 */
+        .time-urgent { color: #FF3
