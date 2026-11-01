@@ -58,4 +58,158 @@
         .eta-unit { font-size: 1.3rem; margin-left: 4px; font-weight: 600; }
         
         /* 動態計時顏色 */
-        .time-urgent { color: #FF3
+        .time-urgent { color: #FF3B30; } /* 衝門口 (≤3分鐘) */
+        .time-normal { color: #00E676; } /* 充裕 (4-10分鐘) */
+        .time-relaxed { color: #AAAAAA; } /* 慢慢行 (>10分鐘) */
+
+        .no-bus { 
+            text-align: center; 
+            padding: 40px; 
+            color: #666; 
+            font-size: 1.3rem; 
+            background: #181818; 
+            border-radius: 18px; 
+        }
+
+        .refresh-info { text-align: center; font-size: 0.85rem; color: #555; margin-top: 24px; }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>北拱街 往 銅鑼灣 (CWB)</h1>
+        <div class="subtitle">實時抵站預測 (按時間動態排序)</div>
+    </header>
+
+    <main id="dashboard">正在載入實時班次...</main>
+    <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
+
+<script>
+const KMB_STOP_ID = '9CFB5F7232818FFA'; // 九巴紅磡北拱街
+const CTB_STOP_ID = '001644';           // 城巴北拱街
+
+const busRoutes = [
+    { route: '108', ctbDir: null },
+    { route: '116', ctbDir: 'O' },
+    { route: '107', ctbDir: 'I' }
+];
+
+async function fetchETA() {
+    const container = document.getElementById('dashboard');
+    const now = new Date();
+    let rawArrivals = [];
+
+    // 1. 抓取九巴資料
+    let kmbData = [];
+    try {
+        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${KMB_STOP_ID}`);
+        const json = await res.json();
+        if (json.data) kmbData = json.data;
+    } catch (err) {}
+
+    // 彙整九巴班次
+    kmbData.forEach(e => {
+        if (['108', '116', '107'].includes(e.route) && e.eta) {
+            rawArrivals.push({
+                route: e.route,
+                company: '九巴',
+                time: new Date(e.eta)
+            });
+        }
+    });
+
+    // 2. 抓取城巴資料 (116 & 107)
+    for (const item of busRoutes) {
+        if (item.ctbDir) {
+            try {
+                const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${CTB_STOP_ID}/${item.route}`);
+                const json = await res.json();
+                if (json.data) {
+                    json.data.forEach(e => {
+                        if (e.eta && e.dir === item.ctbDir) {
+                            rawArrivals.push({
+                                route: item.route,
+                                company: '城巴',
+                                time: new Date(e.eta)
+                            });
+                        }
+                    });
+                }
+            } catch (err) {}
+        }
+    }
+
+    // 3. 全局按抵站時間由近至遠排序
+    rawArrivals.sort((a, b) => a.time - b.time);
+
+    // 去除重覆或時間過近的相同公司班次 (相差30秒以內視為同一班)
+    let uniqueArrivals = [];
+    rawArrivals.forEach(item => {
+        if (!uniqueArrivals.some(existing => 
+            existing.route === item.route && 
+            existing.company === item.company && 
+            Math.abs(existing.time - item.time) < 30000
+        )) {
+            uniqueArrivals.push(item);
+        }
+    });
+
+    // 只保留前 5 最快到的班次，避免畫面過長
+    const topArrivals = uniqueArrivals.slice(0, 5);
+
+    if (topArrivals.length === 0) {
+        container.innerHTML = `<div class="no-bus">目前沒有即將到達的班次 (尾班車已過)</div>`;
+    } else {
+        let htmlContent = '';
+        topArrivals.forEach(item => {
+            const diffMin = Math.round((item.time - now) / 60000);
+            
+            // 決定狀態樣式與文字
+            let timeDisplay = '';
+            let urgencyClass = 'normal';
+            let textClass = 'time-normal';
+
+            if (diffMin <= 0) {
+                timeDisplay = '即將到達';
+                urgencyClass = 'urgent';
+                textClass = 'time-urgent';
+            } else if (diffMin <= 3) {
+                timeDisplay = `${diffMin} <span class="eta-unit">分鐘</span>`;
+                urgencyClass = 'urgent';
+                textClass = 'time-urgent';
+            } else if (diffMin <= 10) {
+                timeDisplay = `${diffMin} <span class="eta-unit">分鐘</span>`;
+                urgencyClass = 'normal';
+                textClass = 'time-normal';
+            } else {
+                timeDisplay = `${diffMin} <span class="eta-unit">分鐘</span>`;
+                urgencyClass = 'relaxed';
+                textClass = 'time-relaxed';
+            }
+
+            const companyTag = item.company === '九巴' ? 'kmb-tag' : 'ctb-tag';
+
+            htmlContent += `
+                <div class="bus-card ${urgencyClass}">
+                    <div class="route-info">
+                        <span class="company-badge ${companyTag}">${item.company}</span>
+                        <span class="route-num">${item.route}</span>
+                    </div>
+                    <div class="eta-info">
+                        <div class="eta-time ${textClass}">${timeDisplay}</div>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = htmlContent;
+    }
+
+    document.getElementById('last-update').innerText = '最後更新：' + now.toLocaleTimeString();
+}
+
+fetchETA();
+setInterval(fetchETA, 30000); // 每 30 秒自動刷新
+</script>
+</body>
+</html>
