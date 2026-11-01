@@ -26,17 +26,22 @@
 <body>
 
     <h1>北拱街 往 港島/銅鑼灣</h1>
-    <div class="subtitle">實時到站 Dashboard</div>
+    <div class="subtitle">實時到站 Dashboard (最多顯示 3 班)</div>
     
     <div id="dashboard">正在載入實時班次...</div>
     <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
 
 <script>
-// 北拱街站各路線在九巴及城巴的精確站點編號
+// 精準站點 ID：
+// 九巴「紅磡北拱街」Stop ID: 9CFB5F7232818FFA
+// 城巴「北拱街」Stop ID: 001644
+const KMB_REAL_STOP_ID = '9CFB5F7232818FFA';
+const CTB_REAL_STOP_ID = '001644';
+
 const busRoutes = [
-    { route: '108', kmbStop: '001548', kmbSeq: 2, ctbStop: null, bound: 'O' }, // 108 北拱街正確九巴站
-    { route: '116', kmbStop: '001550', kmbSeq: 3, ctbStop: '001644', bound: 'O' }, // 116 北拱街
-    { route: '107', kmbStop: null, kmbSeq: null, ctbStop: '001644', bound: 'I' }   // 107 在該站主要由城巴營運/聯營
+    { route: '108', ctbBound: null },
+    { route: '116', ctbBound: 'O' },
+    { route: '107', ctbBound: 'I' }
 ];
 
 async function fetchETA() {
@@ -44,32 +49,34 @@ async function fetchETA() {
     let htmlContent = '';
     const now = new Date();
 
+    // 1. 一次過抓取九巴「紅磡北拱街」的所有實時班次
+    let kmbData = [];
+    try {
+        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${KMB_REAL_STOP_ID}`);
+        const json = await res.json();
+        if (json.data) {
+            kmbData = json.data;
+        }
+    } catch (err) {}
+
     for (const item of busRoutes) {
         let allEtas = [];
 
-        // 1. 讀取九巴 API
-        if (item.kmbStop && item.kmbSeq) {
-            try {
-                const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.kmbStop}/${item.route}/${item.kmbSeq}`);
-                const json = await res.json();
-                if (json.data) {
-                    json.data.forEach(e => {
-                        if (e.eta) {
-                            allEtas.push({ company: '九巴', time: new Date(e.eta) });
-                        }
-                    });
-                }
-            } catch (err) {}
-        }
+        // 整理九巴班次
+        kmbData.forEach(e => {
+            if (e.route === item.route && e.eta) {
+                allEtas.push({ company: '九巴', time: new Date(e.eta) });
+            }
+        });
 
-        // 2. 讀取城巴 API
-        if (item.ctbStop) {
+        // 2. 抓取城巴班次 (聯營線 116 / 107)
+        if (item.ctbBound) {
             try {
-                const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${item.ctbStop}/${item.route}`);
+                const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${CTB_REAL_STOP_ID}/${item.route}`);
                 const json = await res.json();
                 if (json.data) {
                     json.data.forEach(e => {
-                        if (e.eta && e.dir === item.bound) {
+                        if (e.eta && e.dir === item.ctbBound) {
                             allEtas.push({ company: '城巴', time: new Date(e.eta) });
                         }
                     });
@@ -77,26 +84,36 @@ async function fetchETA() {
             } catch (err) {}
         }
 
-        // 3. 混合排序：依抵站時間先後排列
+        // 3. 按照抵站時間先後排序
         allEtas.sort((a, b) => a.time - b.time);
+
+        // 去除重覆資料（同班車兩邊系統重複報時）
+        let uniqueEtas = [];
+        allEtas.forEach(etaObj => {
+            if (!uniqueEtas.some(existing => Math.abs(existing.time - etaObj.time) < 30000 && existing.company === etaObj.company)) {
+                uniqueEtas.push(etaObj);
+            }
+        });
 
         let mainTimeHtml = '未有班次';
         let subTimesHtml = '';
 
-        if (allEtas.length > 0) {
-            const diff1 = Math.round((allEtas[0].time - now) / 60000);
+        if (uniqueEtas.length > 0) {
+            // 第 1 班
+            const diff1 = Math.round((uniqueEtas[0].time - now) / 60000);
             const timeText1 = diff1 <= 0 ? '即將到達' : `${diff1} 分鐘`;
-            const tagClass1 = allEtas[0].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
-            mainTimeHtml = `${timeText1} <span class="eta-company ${tagClass1}">${allEtas[0].company}</span>`;
+            const tagClass1 = uniqueEtas[0].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
+            mainTimeHtml = `${timeText1} <span class="eta-company ${tagClass1}">${uniqueEtas[0].company}</span>`;
 
+            // 第 2 及 第 3 班
             let subItems = [];
-            for (let i = 1; i < Math.min(allEtas.length, 3); i++) {
-                const diff = Math.round((allEtas[i].time - now) / 60000);
+            for (let i = 1; i < Math.min(uniqueEtas.length, 3); i++) {
+                const diff = Math.round((uniqueEtas[i].time - now) / 60000);
                 const timeText = diff <= 0 ? '即將到' : `${diff}分`;
-                const tagClass = allEtas[i].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
+                const tagClass = uniqueEtas[i].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
                 subItems.push(`
                     <div class="eta-sub-item">
-                        下班: ${timeText} <span class="eta-mini-tag ${tagClass}">${allEtas[i].company}</span>
+                        下班: ${timeText} <span class="eta-mini-tag ${tagClass}">${uniqueEtas[i].company}</span>
                     </div>
                 `);
             }
