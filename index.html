@@ -20,62 +20,49 @@
         .eta-sub-item { display: flex; align-items: center; }
         .eta-mini-tag { font-size: 0.75rem; padding: 1px 4px; border-radius: 3px; font-weight: bold; margin-left: 4px; }
         .refresh-info { text-align: center; font-size: 0.9rem; color: #666; margin-top: 25px; }
-        #debug-box { background: #222; border: 1px dashed #555; padding: 15px; margin-top: 20px; font-size: 0.85rem; color: #FFD600; white-space: pre-wrap; word-break: break-all; }
     </style>
 </head>
 
 <body>
 
     <h1>北拱街 往 港島/銅鑼灣</h1>
-    <div class="subtitle">實時到站 Dashboard (診斷模式)</div>
+    <div class="subtitle">實時到站 Dashboard</div>
     
     <div id="dashboard">正在載入實時班次...</div>
     <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
-    
-    <!-- 診斷窗戶：用黎睇九巴 API 實際回傳左乜野 -->
-    <div id="debug-box">正在連線九巴 API 取得原始資料...</div>
 
 <script>
+// 北拱街站各路線在九巴及城巴的精確站點編號
+const busRoutes = [
+    { route: '108', kmbStop: '001548', kmbSeq: 2, ctbStop: null, bound: 'O' }, // 108 北拱街正確九巴站
+    { route: '116', kmbStop: '001550', kmbSeq: 3, ctbStop: '001644', bound: 'O' }, // 116 北拱街
+    { route: '107', kmbStop: null, kmbSeq: null, ctbStop: '001644', bound: 'I' }   // 107 在該站主要由城巴營運/聯營
+];
+
 async function fetchETA() {
     const container = document.getElementById('dashboard');
-    const debugBox = document.getElementById('debug-box');
     let htmlContent = '';
     const now = new Date();
-
-    let kmbData = [];
-    let rawKmbText = "";
-    try {
-        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/001550`);
-        const json = await res.json();
-        if (json.data) {
-            kmbData = json.data;
-            // 找出所有 108, 116, 107 既資料畀你睇
-            let matched = kmbData.filter(e => ['108', '116', '107'].includes(e.route));
-            rawKmbText = "九巴 API 連線成功！找到相關路線筆數: " + matched.length + "\n" + JSON.stringify(matched, null, 2);
-        } else {
-            rawKmbText = "九巴 API 回傳結構異常: " + JSON.stringify(json);
-        }
-    } catch (err) {
-        rawKmbText = "九巴 API 連線失敗: " + err.message;
-    }
-
-    debugBox.innerText = rawKmmText = rawKmbText;
-
-    const busRoutes = [
-        { route: '108', ctbStop: null, bound: 'O' },
-        { route: '116', ctbStop: '001644', bound: 'O' },
-        { route: '107', ctbStop: '001644', bound: 'I' }
-    ];
 
     for (const item of busRoutes) {
         let allEtas = [];
 
-        kmbData.forEach(e => {
-            if (e.route === item.route && e.eta) {
-                allEtas.push({ company: '九巴', time: new Date(e.eta) });
-            }
-        });
+        // 1. 讀取九巴 API
+        if (item.kmbStop && item.kmbSeq) {
+            try {
+                const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.kmbStop}/${item.route}/${item.kmbSeq}`);
+                const json = await res.json();
+                if (json.data) {
+                    json.data.forEach(e => {
+                        if (e.eta) {
+                            allEtas.push({ company: '九巴', time: new Date(e.eta) });
+                        }
+                    });
+                }
+            } catch (err) {}
+        }
 
+        // 2. 讀取城巴 API
         if (item.ctbStop) {
             try {
                 const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${item.ctbStop}/${item.route}`);
@@ -90,6 +77,7 @@ async function fetchETA() {
             } catch (err) {}
         }
 
+        // 3. 混合排序：依抵站時間先後排列
         allEtas.sort((a, b) => a.time - b.time);
 
         let mainTimeHtml = '未有班次';
@@ -106,7 +94,7 @@ async function fetchETA() {
                 const diff = Math.round((allEtas[i].time - now) / 60000);
                 const timeText = diff <= 0 ? '即將到' : `${diff}分`;
                 const tagClass = allEtas[i].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
-                subItems.puts?.() || subItems.push(`
+                subItems.push(`
                     <div class="eta-sub-item">
                         下班: ${timeText} <span class="eta-mini-tag ${tagClass}">${allEtas[i].company}</span>
                     </div>
