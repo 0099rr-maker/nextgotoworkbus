@@ -26,22 +26,19 @@
 <body>
 
     <h1>北拱街 往 港島/銅鑼灣</h1>
-    <div class="subtitle">實時到站 Dashboard (最多顯示 3 班)</div>
+    <div class="subtitle">實時到站 Dashboard</div>
     
     <div id="dashboard">正在載入實時班次...</div>
     <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
 
 <script>
-// 精準站點 ID：
-// 九巴「紅磡北拱街」Stop ID: 9CFB5F7232818FFA
-// 城巴「北拱街」Stop ID: 001644
-const KMB_REAL_STOP_ID = '9CFB5F7232818FFA';
-const CTB_REAL_STOP_ID = '001644';
+const KMB_STOP_ID = '9CFB5F7232818FFA'; // 九巴紅磡北拱街 ID
+const CTB_STOP_ID = '001644';           // 城巴北拱街 ID
 
 const busRoutes = [
-    { route: '108', ctbBound: null },
-    { route: '116', ctbBound: 'O' },
-    { route: '107', ctbBound: 'I' }
+    { route: '108', hasCtb: false },
+    { route: '116', hasCtb: true },
+    { route: '107', hasCtb: true }
 ];
 
 async function fetchETA() {
@@ -49,14 +46,12 @@ async function fetchETA() {
     let htmlContent = '';
     const now = new Date();
 
-    // 1. 一次過抓取九巴「紅磡北拱街」的所有實時班次
+    // 1. 讀取九巴 API
     let kmbData = [];
     try {
-        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${KMB_REAL_STOP_ID}`);
+        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${KMB_STOP_ID}`);
         const json = await res.json();
-        if (json.data) {
-            kmbData = json.data;
-        }
+        if (json.data) kmbData = json.data;
     } catch (err) {}
 
     for (const item of busRoutes) {
@@ -69,14 +64,14 @@ async function fetchETA() {
             }
         });
 
-        // 2. 抓取城巴班次 (聯營線 116 / 107)
-        if (item.ctbBound) {
+        // 2. 讀取城巴 API (不限制 dir，撈取該站所有班次)
+        if (item.hasCtb) {
             try {
-                const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${CTB_REAL_STOP_ID}/${item.route}`);
+                const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${CTB_STOP_ID}/${item.route}`);
                 const json = await res.json();
                 if (json.data) {
                     json.data.forEach(e => {
-                        if (e.eta && e.dir === item.ctbBound) {
+                        if (e.eta) {
                             allEtas.push({ company: '城巴', time: new Date(e.eta) });
                         }
                     });
@@ -84,10 +79,10 @@ async function fetchETA() {
             } catch (err) {}
         }
 
-        // 3. 按照抵站時間先後排序
+        // 3. 混合排序 (時間由近至遠)
         allEtas.sort((a, b) => a.time - b.time);
 
-        // 去除重覆資料（同班車兩邊系統重複報時）
+        // 去除時間極度接近的重複項目
         let uniqueEtas = [];
         allEtas.forEach(etaObj => {
             if (!uniqueEtas.some(existing => Math.abs(existing.time - etaObj.time) < 30000 && existing.company === etaObj.company)) {
