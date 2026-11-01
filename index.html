@@ -3,141 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>北拱街往 CWB 巴士到站 Dashboard</title>
+    <title>北拱街往 CWB 巴士動態 Dashboard</title>
     <style>
-        body { background-color: #121212; color: #FFFFFF; font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 20px; }
-        h1 { text-align: center; color: #00E676; font-size: 2rem; margin-bottom: 5px; }
-        .subtitle { text-align: center; color: #888888; font-size: 1rem; margin-bottom: 25px; }
-        .bus-card { background: #1E1E1E; border-radius: 16px; padding: 20px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; border-left: 8px solid #00E676; }
-        .route-box { display: flex; align-items: center; }
-        .route { font-size: 3.5rem; font-weight: bold; width: 110px; color: #FFFFFF; }
-        .eta-container { text-align: right; }
-        .eta-time { font-size: 2.2rem; font-weight: bold; color: #00E676; }
-        .eta-company { font-size: 1rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; display: inline-block; margin-left: 6px; vertical-align: middle; }
-        .kmb-tag { background-color: #ED1C24; color: white; }
-        .ctb-tag { background-color: #FFD600; color: black; }
-        .eta-sub-list { display: flex; justify-content: flex-end; gap: 12px; margin-top: 6px; font-size: 1.1rem; color: #BBBBBB; }
-        .eta-sub-item { display: flex; align-items: center; }
-        .eta-mini-tag { font-size: 0.75rem; padding: 1px 4px; border-radius: 3px; font-weight: bold; margin-left: 4px; }
-        .refresh-info { text-align: center; font-size: 0.9rem; color: #666; margin-top: 25px; }
-    </style>
-</head>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            background-color: #0A0A0A; 
+            color: #FFFFFF; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            padding: 24px 16px; 
+            max-width: 800px; 
+            margin: 0 auto; 
+        }
+        
+        header { text-align: center; margin-bottom: 24px; }
+        h1 { color: #00E676; font-size: 2.2rem; font-weight: 800; letter-spacing: 1px; }
+        .subtitle { color: #888888; font-size: 1rem; margin-top: 4px; }
 
-<body>
-
-    <h1>北拱街 往 港島/銅鑼灣</h1>
-    <div class="subtitle">實時到站 Dashboard (精準過濾版)</div>
-    
-    <div id="dashboard">正在載入實時班次...</div>
-    <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
-
-<script>
-const KMB_STOP_ID = '9CFB5F7232818FFA'; // 九巴紅磡北拱街
-const CTB_STOP_ID = '001644';           // 城巴北拱街
-
-// 精準定義每一條線城巴的方向 ('O' 代表往港島東/鰂魚涌如116, 'I' 代表往九龍/港島西如107)
-const busRoutes = [
-    { route: '108', ctbDir: null },
-    { route: '116', ctbDir: 'O' },
-    { route: '107', ctbDir: 'I' }
-];
-
-async function fetchETA() {
-    const container = document.getElementById('dashboard');
-    let htmlContent = '';
-    const now = new Date();
-
-    // 1. 抓取九巴資料
-    let kmbData = [];
-    try {
-        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${KMB_STOP_ID}`);
-        const json = await res.json();
-        if (json.data) kmbData = json.data;
-    } catch (err) {}
-
-    for (const item of busRoutes) {
-        let allEtas = [];
-
-        // 篩選九巴該路線班次
-        kmbData.forEach(e => {
-            if (e.route === item.route && e.eta) {
-                allEtas.push({ company: '九巴', time: new Date(e.eta) });
-            }
-        });
-
-        // 2. 抓取城巴資料（嚴格對應專屬方向 dir）
-        if (item.ctbDir) {
-            try {
-                const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${CTB_STOP_ID}/${item.route}`);
-                const json = await res.json();
-                if (json.data) {
-                    json.data.forEach(e => {
-                        if (e.eta && e.dir === item.ctbDir) {
-                            allEtas.push({ company: '城巴', time: new Date(e.eta) });
-                        }
-                    });
-                }
-            } catch (err) {}
+        .bus-card { 
+            background: #181818; 
+            border-radius: 18px; 
+            padding: 18px 24px; 
+            margin-bottom: 16px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border: 1px solid #282828;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
         }
 
-        // 3. 混合排序 (最快到站的排最前)
-        allEtas.sort((a, b) => a.time - b.time);
+        /* 首班車特別加強邊框 */
+        .bus-card.urgent { border-left: 8px solid #FF3B30; }
+        .bus-card.normal { border-left: 8px solid #00E676; }
+        .bus-card.relaxed { border-left: 8px solid #8E8E93; }
 
-        // 过滤重複時間
-        let uniqueEtas = [];
-        allEtas.forEach(etaObj => {
-            if (!uniqueEtas.some(existing => Math.abs(existing.time - etaObj.time) < 30000 && existing.company === etaObj.company)) {
-                uniqueEtas.push(etaObj);
-            }
-        });
-
-        let mainTimeHtml = '未有班次';
-        let subTimesHtml = '';
-
-        if (uniqueEtas.length > 0) {
-            // 第 1 班 (大字)
-            const diff1 = Math.round((uniqueEtas[0].time - now) / 60000);
-            const timeText1 = diff1 <= 0 ? '即將到達' : `${diff1} 分鐘`;
-            const tagClass1 = uniqueEtas[0].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
-            mainTimeHtml = `${timeText1} <span class="eta-company ${tagClass1}">${uniqueEtas[0].company}</span>`;
-
-            // 第 2 及 第 3 班 (小字)
-            let subItems = [];
-            for (let i = 1; i < Math.min(uniqueEtas.length, 3); i++) {
-                const diff = Math.round((uniqueEtas[i].time - now) / 60000);
-                const timeText = diff <= 0 ? '即將到' : `${diff}分`;
-                const tagClass = uniqueEtas[i].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
-                subItems.push(`
-                    <div class="eta-sub-item">
-                        下班: ${timeText} <span class="eta-mini-tag ${tagClass}">${uniqueEtas[i].company}</span>
-                    </div>
-                `);
-            }
-
-            if (subItems.length > 0) {
-                subTimesHtml = `<div class="eta-sub-list">${subItems.join('')}</div>`;
-            }
+        .route-info { display: flex; align-items: center; gap: 16px; }
+        
+        /* 巴士營運商標籤 */
+        .company-badge { 
+            font-size: 1.1rem; 
+            font-weight: 900; 
+            padding: 6px 12px; 
+            border-radius: 8px; 
+            letter-spacing: 1px;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
         }
+        .kmb-tag { background-color: #E60012; color: #FFFFFF; }
+        .ctb-tag { background-color: #FFD600; color: #000000; }
 
-        htmlContent += `
-            <div class="bus-card">
-                <div class="route-box">
-                    <div class="route">${item.route}</div>
-                </div>
-                <div class="eta-container">
-                    <div class="eta-time">${mainTimeHtml}</div>
-                    ${subTimesHtml}
-                </div>
-            </div>
-        `;
-    }
+        .route-num { font-size: 3.8rem; font-weight: 900; line-height: 1; letter-spacing: -1px; }
 
-    container.innerHTML = htmlContent;
-    document.getElementById('last-update').innerText = '最後更新：' + now.toLocaleTimeString();
-}
-
-fetchETA();
-setInterval(fetchETA, 30000);
-</script>
-</body>
-</html>
+        .eta-info { text-align: right; }
+        .eta-time { font-size: 2.8rem; font-weight: 900; line-height: 1; }
+        .eta-unit { font-size: 1.3rem; margin-left: 4px; font-weight: 600; }
+        
+        /* 動態計時顏色 */
+        .time-urgent { color: #FF3
