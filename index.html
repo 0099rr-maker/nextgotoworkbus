@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>北拱街往 CWB 巴士動態 Dashboard</title>
+    <title>北拱街往 銅鑼灣 巴士動態看板</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
@@ -15,9 +15,27 @@
             margin: 0 auto; 
         }
         
-        header { text-align: center; margin-bottom: 24px; }
+        header { text-align: center; margin-bottom: 24px; position: relative; }
         h1 { color: #00E676; font-size: 2.2rem; font-weight: 800; letter-spacing: 1px; }
         .subtitle { color: #888888; font-size: 1rem; margin-top: 4px; }
+
+        /* 手動重新整理按鈕 */
+        .refresh-btn {
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            background: #222;
+            color: #00E676;
+            border: 1px solid #333;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .refresh-btn:active { background: #333; }
 
         .bus-card { 
             background: #181818; 
@@ -29,24 +47,21 @@
             align-items: center; 
             border: 1px solid #282828;
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-            transition: all 0.3s ease;
         }
 
-        /* 首班車特別加強邊框 */
+        /* 顏色邊框分級 */
         .bus-card.urgent { border-left: 8px solid #FF3B30; }
         .bus-card.normal { border-left: 8px solid #00E676; }
         .bus-card.relaxed { border-left: 8px solid #8E8E93; }
 
         .route-info { display: flex; align-items: center; gap: 16px; }
         
-        /* 巴士營運商標籤 */
         .company-badge { 
             font-size: 1.1rem; 
             font-weight: 900; 
             padding: 6px 12px; 
             border-radius: 8px; 
             letter-spacing: 1px;
-            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
         }
         .kmb-tag { background-color: #E60012; color: #FFFFFF; }
         .ctb-tag { background-color: #FFD600; color: #000000; }
@@ -57,10 +72,9 @@
         .eta-time { font-size: 2.8rem; font-weight: 900; line-height: 1; }
         .eta-unit { font-size: 1.3rem; margin-left: 4px; font-weight: 600; }
         
-        /* 動態計時顏色 */
-        .time-urgent { color: #FF3B30; } /* 衝門口 (≤3分鐘) */
-        .time-normal { color: #00E676; } /* 充裕 (4-10分鐘) */
-        .time-relaxed { color: #AAAAAA; } /* 慢慢行 (>10分鐘) */
+        .time-urgent { color: #FF3B30; } 
+        .time-normal { color: #00E676; } 
+        .time-relaxed { color: #AAAAAA; } 
 
         .no-bus { 
             text-align: center; 
@@ -78,16 +92,17 @@
 <body>
 
     <header>
-        <h1>北拱街 往 銅鑼灣 (CWB)</h1>
-        <div class="subtitle">實時抵站預測 (按時間動態排序)</div>
+        <h1>北拱街 往 銅鑼灣</h1>
+        <div class="subtitle">實時動態看板</div>
+        <button class="refresh-btn" onclick="fetchETA()">🔄 更新</button>
     </header>
 
     <main id="dashboard">正在載入實時班次...</main>
     <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
 
 <script>
-const KMB_STOP_ID = '9CFB5F7232818FFA'; // 九巴紅磡北拱街
-const CTB_STOP_ID = '001644';           // 城巴北拱街
+const KMB_STOP_ID = '9CFB5F7232818FFA'; 
+const CTB_STOP_ID = '001644';           
 
 const busRoutes = [
     { route: '108', ctbDir: null },
@@ -95,12 +110,28 @@ const busRoutes = [
     { route: '107', ctbDir: 'I' }
 ];
 
+// 保持 iPad 螢幕常亮 (Wake Lock API)
+let wakeLock = null;
+async function requestWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+        }
+    } catch (err) {}
+}
+requestWakeLock();
+document.addEventListener('visibilitychange', async () => {
+    if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+    }
+});
+
 async function fetchETA() {
     const container = document.getElementById('dashboard');
     const now = new Date();
     let rawArrivals = [];
 
-    // 1. 抓取九巴資料
+    // 1. 九巴資料
     let kmbData = [];
     try {
         const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${KMB_STOP_ID}`);
@@ -108,7 +139,6 @@ async function fetchETA() {
         if (json.data) kmbData = json.data;
     } catch (err) {}
 
-    // 彙整九巴班次
     kmbData.forEach(e => {
         if (['108', '116', '107'].includes(e.route) && e.eta) {
             rawArrivals.push({
@@ -119,7 +149,7 @@ async function fetchETA() {
         }
     });
 
-    // 2. 抓取城巴資料 (116 & 107)
+    // 2. 城巴資料
     for (const item of busRoutes) {
         if (item.ctbDir) {
             try {
@@ -140,10 +170,9 @@ async function fetchETA() {
         }
     }
 
-    // 3. 全局按抵站時間由近至遠排序
+    // 3. 排序與過濾
     rawArrivals.sort((a, b) => a.time - b.time);
 
-    // 去除重覆或時間過近的相同公司班次 (相差30秒以內視為同一班)
     let uniqueArrivals = [];
     rawArrivals.forEach(item => {
         if (!uniqueArrivals.some(existing => 
@@ -155,7 +184,6 @@ async function fetchETA() {
         }
     });
 
-    // 只保留前 5 最快到的班次，避免畫面過長
     const topArrivals = uniqueArrivals.slice(0, 5);
 
     if (topArrivals.length === 0) {
@@ -165,7 +193,6 @@ async function fetchETA() {
         topArrivals.forEach(item => {
             const diffMin = Math.round((item.time - now) / 60000);
             
-            // 決定狀態樣式與文字
             let timeDisplay = '';
             let urgencyClass = 'normal';
             let textClass = 'time-normal';
