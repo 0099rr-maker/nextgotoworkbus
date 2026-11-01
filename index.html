@@ -26,42 +26,43 @@
 <body>
 
     <h1>北拱街 往 港島/銅鑼灣</h1>
-    <div class="subtitle">實時到站 Dashboard (最多顯示 3 班)</div>
+    <div class="subtitle">實時到站 Dashboard (已修復九巴數據源)</div>
     
     <div id="dashboard">正在載入實時班次...</div>
     <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
 
 <script>
-// 設定：漆咸道北南行「北拱街」站
-// 九巴 Stop ID: 001550 | 城巴 Stop ID: 001644
-const busRoutes = [
-    { route: '108', kmbStop: '001550', ctbStop: null, bound: 'O' },
-    { route: '116', kmbStop: '001550', ctbStop: '001644', bound: 'O' },
-    { route: '107', kmbStop: '001550', ctbStop: '001644', bound: 'I' }
-];
-
 async function fetchETA() {
     const container = document.getElementById('dashboard');
     let htmlContent = '';
     const now = new Date();
 
+    // 1. 一次過取得九巴「北拱街」站 (001550) 的所有實時班次
+    let kmbData = [];
+    try {
+        const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/001550`);
+        const json = await res.json();
+        if (json.data) {
+            kmbData = json.data;
+        }
+    } catch (err) {}
+
+    // 需要追蹤的路線設定
+    const busRoutes = [
+        { route: '108', ctbStop: null, bound: 'O' },
+        { route: '116', ctbStop: '001644', bound: 'O' },
+        { route: '107', ctbStop: '001644', bound: 'I' }
+    ];
+
     for (const item of busRoutes) {
         let allEtas = [];
 
-        // 1. 讀取九巴 API
-        if (item.kmbStop) {
-            try {
-                const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/eta/${item.kmbStop}/${item.route}/1`);
-                const json = await res.json();
-                if (json.data) {
-                    json.data.forEach(e => {
-                        if (e.eta) {
-                            allEtas.push({ company: '九巴', time: new Date(e.eta) });
-                        }
-                    });
-                }
-            } catch (err) {}
-        }
+        // 從九巴資料中篩選出該路線的班次
+        kmbData.forEach(e => {
+            if (e.route === item.route && e.eta) {
+                allEtas.push({ company: '九巴', time: new Date(e.eta) });
+            }
+        });
 
         // 2. 讀取城巴 API (適用於 116 / 107 聯營)
         if (item.ctbStop) {
@@ -85,13 +86,13 @@ async function fetchETA() {
         let subTimesHtml = '';
 
         if (allEtas.length > 0) {
-            // 第 1 班車 (大字顯示)
+            // 第 1 班車
             const diff1 = Math.round((allEtas[0].time - now) / 60000);
             const timeText1 = diff1 <= 0 ? '即將到達' : `${diff1} 分鐘`;
             const tagClass1 = allEtas[0].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
             mainTimeHtml = `${timeText1} <span class="eta-company ${tagClass1}">${allEtas[0].company}</span>`;
 
-            // 第 2 及 第 3 班車 (小字排列顯示)
+            // 第 2 及 第 3 班車
             let subItems = [];
             for (let i = 1; i < Math.min(allEtas.length, 3); i++) {
                 const diff = Math.round((allEtas[i].time - now) / 60000);
