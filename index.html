@@ -26,19 +26,20 @@
 <body>
 
     <h1>北拱街 往 港島/銅鑼灣</h1>
-    <div class="subtitle">實時到站 Dashboard</div>
+    <div class="subtitle">實時到站 Dashboard (精準過濾版)</div>
     
     <div id="dashboard">正在載入實時班次...</div>
     <div class="refresh-info" id="last-update">最後更新：--:--:--</div>
 
 <script>
-const KMB_STOP_ID = '9CFB5F7232818FFA'; // 九巴紅磡北拱街 ID
-const CTB_STOP_ID = '001644';           // 城巴北拱街 ID
+const KMB_STOP_ID = '9CFB5F7232818FFA'; // 九巴紅磡北拱街
+const CTB_STOP_ID = '001644';           // 城巴北拱街
 
+// 精準定義每一條線城巴的方向 ('O' 代表往港島東/鰂魚涌如116, 'I' 代表往九龍/港島西如107)
 const busRoutes = [
-    { route: '108', hasCtb: false },
-    { route: '116', hasCtb: true },
-    { route: '107', hasCtb: true }
+    { route: '108', ctbDir: null },
+    { route: '116', ctbDir: 'O' },
+    { route: '107', ctbDir: 'I' }
 ];
 
 async function fetchETA() {
@@ -46,7 +47,7 @@ async function fetchETA() {
     let htmlContent = '';
     const now = new Date();
 
-    // 1. 讀取九巴 API
+    // 1. 抓取九巴資料
     let kmbData = [];
     try {
         const res = await fetch(`https://data.etabus.gov.hk/v1/transport/kmb/stop-eta/${KMB_STOP_ID}`);
@@ -57,21 +58,21 @@ async function fetchETA() {
     for (const item of busRoutes) {
         let allEtas = [];
 
-        // 整理九巴班次
+        // 篩選九巴該路線班次
         kmbData.forEach(e => {
             if (e.route === item.route && e.eta) {
                 allEtas.push({ company: '九巴', time: new Date(e.eta) });
             }
         });
 
-        // 2. 讀取城巴 API (不限制 dir，撈取該站所有班次)
-        if (item.hasCtb) {
+        // 2. 抓取城巴資料（嚴格對應專屬方向 dir）
+        if (item.ctbDir) {
             try {
                 const res = await fetch(`https://rt.data.gov.hk/v2/transport/citybus/eta/CTB/${CTB_STOP_ID}/${item.route}`);
                 const json = await res.json();
                 if (json.data) {
                     json.data.forEach(e => {
-                        if (e.eta) {
+                        if (e.eta && e.dir === item.ctbDir) {
                             allEtas.push({ company: '城巴', time: new Date(e.eta) });
                         }
                     });
@@ -79,10 +80,10 @@ async function fetchETA() {
             } catch (err) {}
         }
 
-        // 3. 混合排序 (時間由近至遠)
+        // 3. 混合排序 (最快到站的排最前)
         allEtas.sort((a, b) => a.time - b.time);
 
-        // 去除時間極度接近的重複項目
+        // 过滤重複時間
         let uniqueEtas = [];
         allEtas.forEach(etaObj => {
             if (!uniqueEtas.some(existing => Math.abs(existing.time - etaObj.time) < 30000 && existing.company === etaObj.company)) {
@@ -94,13 +95,13 @@ async function fetchETA() {
         let subTimesHtml = '';
 
         if (uniqueEtas.length > 0) {
-            // 第 1 班
+            // 第 1 班 (大字)
             const diff1 = Math.round((uniqueEtas[0].time - now) / 60000);
             const timeText1 = diff1 <= 0 ? '即將到達' : `${diff1} 分鐘`;
             const tagClass1 = uniqueEtas[0].company === '九巴' ? 'kmb-tag' : 'ctb-tag';
             mainTimeHtml = `${timeText1} <span class="eta-company ${tagClass1}">${uniqueEtas[0].company}</span>`;
 
-            // 第 2 及 第 3 班
+            // 第 2 及 第 3 班 (小字)
             let subItems = [];
             for (let i = 1; i < Math.min(uniqueEtas.length, 3); i++) {
                 const diff = Math.round((uniqueEtas[i].time - now) / 60000);
